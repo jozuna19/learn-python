@@ -56,12 +56,15 @@ function runPython(code) {
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────
-auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+  .then(() => console.log('[auth] persistence: LOCAL'))
+  .catch(e => console.error('[auth] persistence error:', e));
 
 function signIn() {
+  console.log('[auth] starting sign-in redirect…');
   const provider = new firebase.auth.GoogleAuthProvider();
   auth.signInWithRedirect(provider).catch(err => {
-    console.error('Sign-in error:', err);
+    console.error('[auth] sign-in error:', err);
     alert('Sign-in failed: ' + err.message);
   });
 }
@@ -71,11 +74,21 @@ function signOut() {
 }
 
 // Handle the redirect result when coming back from Google
-auth.getRedirectResult().catch(err => {
-  console.error('Redirect result error:', err);
-});
+auth.getRedirectResult()
+  .then(result => {
+    if (result && result.user) {
+      console.log('[auth] redirect success:', result.user.email);
+    } else {
+      console.log('[auth] no pending redirect');
+    }
+  })
+  .catch(err => {
+    console.error('[auth] redirect error:', err.code, err.message);
+    alert('Auth error: ' + err.message);
+  });
 
 auth.onAuthStateChanged(async user => {
+  console.log('[auth] state changed:', user ? user.email : '(signed out)');
   currentUser = user;
 
   if (user) {
