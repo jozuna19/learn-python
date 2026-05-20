@@ -91,28 +91,31 @@ auth.onAuthStateChanged(async user => {
   console.log('[auth] state changed:', user ? user.email : '(signed out)');
   currentUser = user;
 
-  if (user) {
-    // Load progress from Firestore and merge with local
-    try {
-      const doc = await db.collection('users').doc(user.uid).get();
-      if (doc.exists) {
-        const cloud = doc.data().completed || [];
-        // Merge: union of local + cloud
-        cloud.forEach(id => completed.add(id));
-        localStorage.setItem(STORAGE_KEY, JSON.stringify([...completed]));
-      } else {
-        // First login — push local progress up to Firestore
-        await save();
-      }
-    } catch (e) {
-      console.error('Firestore error:', e);
-    }
-  }
-
+  // Update UI immediately so user sees signed-in state right away
   renderUserSection(user);
   const activeId = window.location.hash.slice(1);
   renderNav(activeId || null);
   updateProgress();
+
+  // Then sync with Firestore in the background
+  if (user) {
+    try {
+      console.log('[firestore] reading user doc…');
+      const doc = await db.collection('users').doc(user.uid).get();
+      console.log('[firestore] exists:', doc.exists);
+      if (doc.exists) {
+        const cloud = doc.data().completed || [];
+        cloud.forEach(id => completed.add(id));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([...completed]));
+      } else {
+        await save();
+      }
+      renderNav(activeId || null);
+      updateProgress();
+    } catch (e) {
+      console.error('[firestore] error:', e);
+    }
+  }
 });
 
 function renderUserSection(user) {
