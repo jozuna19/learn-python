@@ -1,9 +1,30 @@
+// ── Firebase ────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyBza0dRFtl1ODJ0jbWX-cfcrJ8QPAtFc6Q",
+  authDomain: "learn-python-385cc.firebaseapp.com",
+  projectId: "learn-python-385cc",
+  storageBucket: "learn-python-385cc.firebasestorage.app",
+  messagingSenderId: "472162980700",
+  appId: "1:472162980700:web:5b06994f20229a23f62799"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+let currentUser = null;
+
 // ── State ──────────────────────────────────────────────────────────
 const STORAGE_KEY = 'pytutor_done';
 let completed = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
 
-function save() {
+async function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify([...completed]));
+  if (currentUser) {
+    await db.collection('users').doc(currentUser.uid).set({
+      completed: [...completed],
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
 }
 
 // ── Flat lesson index ───────────────────────────────────────────────
@@ -34,12 +55,70 @@ function runPython(code) {
   });
 }
 
+// ── Auth ─────────────────────────────────────────────────────────────
+function signIn() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider).catch(err => {
+    console.error('Sign-in error:', err);
+  });
+}
+
+function signOut() {
+  auth.signOut();
+}
+
+auth.onAuthStateChanged(async user => {
+  currentUser = user;
+
+  if (user) {
+    // Load progress from Firestore and merge with local
+    try {
+      const doc = await db.collection('users').doc(user.uid).get();
+      if (doc.exists) {
+        const cloud = doc.data().completed || [];
+        // Merge: union of local + cloud
+        cloud.forEach(id => completed.add(id));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([...completed]));
+      } else {
+        // First login — push local progress up to Firestore
+        await save();
+      }
+    } catch (e) {
+      console.error('Firestore error:', e);
+    }
+  }
+
+  renderUserSection(user);
+  const activeId = window.location.hash.slice(1);
+  renderNav(activeId || null);
+  updateProgress();
+});
+
+function renderUserSection(user) {
+  const el = document.getElementById('userSection');
+  if (user) {
+    el.innerHTML = `
+      <img class="user-avatar" src="${user.photoURL || ''}" alt="">
+      <div class="user-info">
+        <div class="user-name">${user.displayName || user.email}</div>
+        <div class="user-sync">✓ Progress syncing</div>
+      </div>
+      <button class="signout-btn" onclick="signOut()">Sign out</button>`;
+  } else {
+    el.innerHTML = `
+      <button class="signin-btn" onclick="signIn()">
+        <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#fff" d="M12.545 10.239v3.821h5.445c-.712 2.315-2.647 3.972-5.445 3.972a6.033 6.033 0 110-12.064c1.498 0 2.866.549 3.921 1.453l2.814-2.814A9.969 9.969 0 0012.545 2C7.021 2 2.543 6.477 2.543 12s4.478 10 10.002 10c8.396 0 10.249-7.85 9.426-11.748l-9.426-.013z"/></svg>
+        Sign in with Google
+      </button>
+      <div class="signin-note">Sign in to sync progress across devices</div>`;
+  }
+}
+
 // ── Sidebar nav ─────────────────────────────────────────────────────
 function renderNav(activeId) {
   const nav = document.getElementById('moduleList');
   nav.innerHTML = '';
 
-  // Home link
   const home = document.createElement('a');
   home.className = 'lesson-link' + (!activeId ? ' active' : '');
   home.innerHTML = `<span class="check">⊞</span> Home`;
@@ -164,12 +243,10 @@ function renderLesson(id) {
       <button class="nav-btn primary" onclick="${next ? `navigate('${next.id}')` : "navigate(null)"}">${next ? next.title + ' →' : 'Finish Course →'}</button>
     </div>`;
 
-  // Syntax highlight all static code blocks
   el.querySelectorAll('pre code').forEach(block => {
     hljs.highlightElement(block);
   });
 
-  // Wire up inline run buttons
   el.querySelectorAll('.run-example-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const code = btn.dataset.code;
@@ -184,7 +261,6 @@ function renderLesson(id) {
     });
   });
 
-  // Wire up try-it runners
   el.querySelectorAll('.runner').forEach(runnerEl => {
     const btn = runnerEl.querySelector('.run-btn');
     const resetBtn = runnerEl.querySelector('.reset-btn');
@@ -262,11 +338,11 @@ function codeBlock(code, label = 'python') {
   </div>`;
 }
 
-// Make codeBlock available to curriculum.js
 window.cb = codeBlock;
 
 // ── Boot ─────────────────────────────────────────────────────────────
 (function init() {
+  renderUserSection(null);
   const id = window.location.hash.slice(1);
   if (id && lessonIndex(id) !== -1) {
     renderLesson(id);
