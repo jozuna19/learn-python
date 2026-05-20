@@ -56,16 +56,24 @@ function runPython(code) {
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+
 function signIn() {
   const provider = new firebase.auth.GoogleAuthProvider();
-  auth.signInWithPopup(provider).catch(err => {
+  auth.signInWithRedirect(provider).catch(err => {
     console.error('Sign-in error:', err);
+    alert('Sign-in failed: ' + err.message);
   });
 }
 
 function signOut() {
   auth.signOut();
 }
+
+// Handle the redirect result when coming back from Google
+auth.getRedirectResult().catch(err => {
+  console.error('Redirect result error:', err);
+});
 
 auth.onAuthStateChanged(async user => {
   currentUser = user;
